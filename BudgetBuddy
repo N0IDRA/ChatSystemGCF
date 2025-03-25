@@ -1,0 +1,555 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <vector>
+#include <string>
+#include <thread>
+#include <chrono>
+#include <conio.h>
+#include <filesystem>
+#include <algorithm>
+#include <map>
+#include <cctype>
+#include <ctime>
+using namespace std;
+namespace fs = filesystem;
+
+// Global variables
+map<string, string> currencyRates = {{"USD", "1.0"}, {"PHP", "50.0"}, {"EUR", "0.85"}};
+const string ADMIN_PIN = "9999";
+const string DATA_DIR = "user_data";
+
+// User structure
+struct User {
+    string username;
+    string pin;
+    string email;
+    string phone;
+    string accountType;
+    string currency;
+    double balance;
+    bool isAdmin;
+    string csvFile;
+};
+
+// Function prototypes
+void createDataDirectory();
+bool isValidEmail(const string& email);
+bool isValidPhone(const string& phone);
+void saveUserData(const User& user);
+bool loadUserData(const string& username, User& user);
+void adminMenu();
+void userMenu(User& user);
+void createAccount();
+bool login(User& loggedInUser);
+void displayExchangeRates();
+void convertCurrency(User& user);
+void modifyUserRecord();
+void backupUserData();
+void restoreUserData();
+
+// Main function
+int main() {
+    createDataDirectory();
+    
+    while (true) {
+        system("CLS");
+        cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+        cout << "\t\t\t\t\t\t::    BUDGET BUDDY v2.0   ::\n";
+        cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+        cout << "\t\t\t\t\t\t  1. Login\n";
+        cout << "\t\t\t\t\t\t  2. Create Account\n";
+        cout << "\t\t\t\t\t\t  3. Exchange Rates\n";
+        cout << "\t\t\t\t\t\t  4. Admin Access\n";
+        cout << "\t\t\t\t\t\t  5. Exit\n";
+        cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+        cout << "\t\t\t\t\t\t  Enter choice: ";
+
+        int choice;
+        cin >> choice;
+
+        if (cin.fail()) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "Invalid input. Please try again.\n";
+            this_thread::sleep_for(chrono::seconds(1));
+            continue;
+        }
+
+        switch (choice) {
+            case 1: {
+                User user;
+                if (login(user)) {
+                    if (user.isAdmin) {
+                        adminMenu();
+                    } else {
+                        userMenu(user);
+                    }
+                }
+                break;
+            }
+            case 2:
+                createAccount();
+                break;
+            case 3:
+                displayExchangeRates();
+                break;
+            case 4: {
+                User admin;
+                if (login(admin) && admin.isAdmin) {
+                    adminMenu();
+                }
+                break;
+            }
+            case 5:
+                return 0;
+            default:
+                cout << "Invalid choice. Please try again.\n";
+                this_thread::sleep_for(chrono::seconds(1));
+        }
+    }
+}
+
+// Implementation of functions
+void createDataDirectory() {
+    if (!fs::exists(DATA_DIR)) {
+        fs::create_directory(DATA_DIR);
+    }
+}
+
+bool isValidEmail(const string& email) {
+    size_t at = email.find('@');
+    return at != string::npos && email.find('.', at) != string::npos;
+}
+
+bool isValidPhone(const string& phone) {
+    return phone.length() >= 10 && all_of(phone.begin(), phone.end(), ::isdigit);
+}
+
+void saveUserData(const User& user) {
+    ofstream file(DATA_DIR + "/" + user.username + ".csv");
+    if (file.is_open()) {
+        file << user.username << "," << user.pin << "," << user.email << "," 
+             << user.phone << "," << user.accountType << "," << user.currency << ","
+             << user.balance << "," << user.isAdmin << "\n";
+        file.close();
+    }
+}
+
+bool loadUserData(const string& username, User& user) {
+    ifstream file(DATA_DIR + "/" + username + ".csv");
+    if (!file.is_open()) return false;
+
+    string line;
+    if (getline(file, line)) {
+        stringstream ss(line);
+        string item;
+        
+        getline(ss, item, ','); user.username = item;
+        getline(ss, item, ','); user.pin = item;
+        getline(ss, item, ','); user.email = item;
+        getline(ss, item, ','); user.phone = item;
+        getline(ss, item, ','); user.accountType = item;
+        getline(ss, item, ','); user.currency = item;
+        getline(ss, item, ','); user.balance = stod(item);
+        getline(ss, item, ','); user.isAdmin = (item == "1");
+        user.csvFile = DATA_DIR + "/" + username + ".csv";
+    }
+    file.close();
+    return true;
+}
+
+void createAccount() {
+    User newUser;
+    system("CLS");
+    cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+    cout << "\t\t\t\t\t\t::    CREATE NEW ACCOUNT   ::\n";
+    cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+
+    cout << "Enter username: ";
+    cin >> newUser.username;
+
+    // Check if user already exists
+    if (fs::exists(DATA_DIR + "/" + newUser.username + ".csv")) {
+        cout << "Username already exists!\n";
+        this_thread::sleep_for(chrono::seconds(1));
+        return;
+    }
+
+    cout << "Enter 4-digit PIN: ";
+    string pin;
+    for (int i = 0; i < 4; ++i) {
+        char ch = _getch();
+        if (isdigit(ch)) {
+            pin += ch;
+            cout << "*";
+        }
+    }
+    cout << "\n";
+    newUser.pin = pin;
+
+    do {
+        cout << "Enter email address: ";
+        cin >> newUser.email;
+        if (!isValidEmail(newUser.email)) {
+            cout << "Invalid email format! Please try again.\n";
+        }
+    } while (!isValidEmail(newUser.email));
+
+    do {
+        cout << "Enter phone number: ";
+        cin >> newUser.phone;
+        if (!isValidPhone(newUser.phone)) {
+            cout << "Invalid phone number! Must be at least 10 digits.\n";
+        }
+    } while (!isValidPhone(newUser.phone));
+
+    cout << "Select account type:\n";
+    cout << "1. Student Plan\n2. Teacher Plan\n3. Parent Plan\n4. Other\nChoice: ";
+    int typeChoice;
+    cin >> typeChoice;
+    switch (typeChoice) {
+        case 1: newUser.accountType = "Student"; break;
+        case 2: newUser.accountType = "Teacher"; break;
+        case 3: newUser.accountType = "Parent"; break;
+        default: newUser.accountType = "Other";
+    }
+
+    cout << "Select currency (USD, PHP, EUR): ";
+    cin >> newUser.currency;
+    transform(newUser.currency.begin(), newUser.currency.end(), newUser.currency.begin(), ::toupper);
+
+    cout << "Enter initial balance: ";
+    cin >> newUser.balance;
+
+    newUser.isAdmin = false;
+    saveUserData(newUser);
+    cout << "Account created successfully!\n";
+    this_thread::sleep_for(chrono::seconds(1));
+}
+
+bool login(User& loggedInUser) {
+    system("CLS");
+    string username, pin;
+    cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+    cout << "\t\t\t\t\t\t::        LOGIN           ::\n";
+    cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+    cout << "Enter username: ";
+    cin >> username;
+
+    cout << "Enter PIN: ";
+    for (int i = 0; i < 4; ++i) {
+        char ch = _getch();
+        if (isdigit(ch)) {
+            pin += ch;
+            cout << "*";
+        }
+    }
+    cout << "\n";
+
+    // Check for admin login
+    if (username == "admin" && pin == ADMIN_PIN) {
+        loggedInUser.username = "admin";
+        loggedInUser.pin = ADMIN_PIN;
+        loggedInUser.isAdmin = true;
+        return true;
+    }
+
+    if (loadUserData(username, loggedInUser)) {
+        if (loggedInUser.pin == pin) {
+            cout << "Login successful!\n";
+            this_thread::sleep_for(chrono::seconds(1));
+            return true;
+        }
+    }
+
+    cout << "Invalid username or PIN!\n";
+    this_thread::sleep_for(chrono::seconds(1));
+    return false;
+}
+
+void adminMenu() {
+    while (true) {
+        system("CLS");
+        cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+        cout << "\t\t\t\t\t\t::      ADMIN PANEL       ::\n";
+        cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+        cout << "1. View All Users\n";
+        cout << "2. Modify User Record\n";
+        cout << "3. Backup User Data\n";
+        cout << "4. Restore User Data\n";
+        cout << "5. Logout\n";
+        cout << "Choice: ";
+
+        int choice;
+        cin >> choice;
+
+        switch (choice) {
+            case 1: {
+                cout << "\nAll Users:\n";
+                for (const auto& entry : fs::directory_iterator(DATA_DIR)) {
+                    string filename = entry.path().filename().string();
+                    if (filename != "admin.csv") {
+                        cout << filename.substr(0, filename.find(".csv")) << "\n";
+                    }
+                }
+                cout << "\nPress Enter to continue...";
+                cin.ignore();
+                cin.get();
+                break;
+            }
+            case 2:
+                modifyUserRecord();
+                break;
+            case 3:
+                backupUserData();
+                break;
+            case 4:
+                restoreUserData();
+                break;
+            case 5:
+                return;
+            default:
+                cout << "Invalid choice!\n";
+                this_thread::sleep_for(chrono::seconds(1));
+        }
+    }
+}
+
+void userMenu(User& user) {
+    while (true) {
+        system("CLS");
+        cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+        cout << "\t\t\t\t\t\t::    USER DASHBOARD      ::\n";
+        cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+        cout << "Welcome, " << user.username << " (" << user.accountType << ")\n";
+        cout << "Balance: " << user.currency << " " << fixed << setprecision(2) << user.balance << "\n";
+        cout << "1. Add Expense\n";
+        cout << "2. View Expenses\n";
+        cout << "3. Convert Currency\n";
+        cout << "4. Change PIN\n";
+        cout << "5. Logout\n";
+        cout << "Choice: ";
+
+        int choice;
+        cin >> choice;
+
+        switch (choice) {
+            case 1: {
+                // Add expense logic
+                break;
+            }
+            case 2: {
+                // View expenses logic
+                break;
+            }
+            case 3:
+                convertCurrency(user);
+                break;
+            case 4: {
+                string newPin;
+                cout << "Enter new 4-digit PIN: ";
+                for (int i = 0; i < 4; ++i) {
+                    char ch = _getch();
+                    if (isdigit(ch)) {
+                        newPin += ch;
+                        cout << "*";
+                    }
+                }
+                cout << "\n";
+                user.pin = newPin;
+                saveUserData(user);
+                cout << "PIN changed successfully!\n";
+                this_thread::sleep_for(chrono::seconds(1));
+                break;
+            }
+            case 5:
+                return;
+            default:
+                cout << "Invalid choice!\n";
+                this_thread::sleep_for(chrono::seconds(1));
+        }
+    }
+}
+
+void displayExchangeRates() {
+    system("CLS");
+    cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+    cout << "\t\t\t\t\t\t::    EXCHANGE RATES      ::\n";
+    cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+    for (const auto& rate : currencyRates) {
+        cout << "1 USD = " << rate.second << " " << rate.first << "\n";
+    }
+    cout << "\nPress Enter to continue...";
+    cin.ignore();
+    cin.get();
+}
+
+void convertCurrency(User& user) {
+    system("CLS");
+    cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+    cout << "\t\t\t\t\t\t::    CURRENCY CONVERTER  ::\n";
+    cout << "\t\t\t\t\t\t::::::::::::::::::::::::::::\n";
+    cout << "Current balance: " << user.currency << " " << user.balance << "\n";
+    
+    string newCurrency;
+    cout << "Enter new currency (USD, PHP, EUR): ";
+    cin >> newCurrency;
+    transform(newCurrency.begin(), newCurrency.end(), newCurrency.begin(), ::toupper);
+
+    if (currencyRates.find(newCurrency) == currencyRates.end()) {
+        cout << "Invalid currency!\n";
+        this_thread::sleep_for(chrono::seconds(1));
+        return;
+    }
+
+    double usdAmount = user.balance / stod(currencyRates[user.currency]);
+    user.balance = usdAmount * stod(currencyRates[newCurrency]);
+    user.currency = newCurrency;
+    saveUserData(user);
+    cout << "Converted balance: " << user.currency << " " << user.balance << "\n";
+    this_thread::sleep_for(chrono::seconds(1));
+}
+
+void modifyUserRecord() {
+    string username;
+    cout << "Enter username to modify: ";
+    cin >> username;
+
+    User user;
+    if (!loadUserData(username, user)) {
+        cout << "User not found!\n";
+        this_thread::sleep_for(chrono::seconds(1));
+        return;
+    }
+
+    cout << "\nCurrent details:\n";
+    cout << "1. Username: " << user.username << "\n";
+    cout << "2. Email: " << user.email << "\n";
+    cout << "3. Phone: " << user.phone << "\n";
+    cout << "4. Account Type: " << user.accountType << "\n";
+    cout << "5. Balance: " << user.currency << " " << user.balance << "\n";
+    cout << "Enter field number to modify (1-5): ";
+
+    int field;
+    cin >> field;
+
+    switch (field) {
+        case 1: {
+            string newUsername;
+            cout << "Enter new username: ";
+            cin >> newUsername;
+            if (fs::exists(DATA_DIR + "/" + newUsername + ".csv")) {
+                cout << "Username already exists!\n";
+            } else {
+                fs::rename(user.csvFile, DATA_DIR + "/" + newUsername + ".csv");
+                user.username = newUsername;
+                user.csvFile = DATA_DIR + "/" + newUsername + ".csv";
+                cout << "Username updated!\n";
+            }
+            break;
+        }
+        case 2: {
+            string newEmail;
+            cout << "Enter new email: ";
+            cin >> newEmail;
+            if (isValidEmail(newEmail)) {
+                user.email = newEmail;
+                cout << "Email updated!\n";
+            } else {
+                cout << "Invalid email format!\n";
+            }
+            break;
+        }
+        case 3: {
+            string newPhone;
+            cout << "Enter new phone: ";
+            cin >> newPhone;
+            if (isValidPhone(newPhone)) {
+                user.phone = newPhone;
+                cout << "Phone updated!\n";
+            } else {
+                cout << "Invalid phone number!\n";
+            }
+            break;
+        }
+        case 4: {
+            cout << "Select new account type:\n";
+            cout << "1. Student Plan\n2. Teacher Plan\n3. Parent Plan\n4. Other\nChoice: ";
+            int typeChoice;
+            cin >> typeChoice;
+            switch (typeChoice) {
+                case 1: user.accountType = "Student"; break;
+                case 2: user.accountType = "Teacher"; break;
+                case 3: user.accountType = "Parent"; break;
+                default: user.accountType = "Other";
+            }
+            cout << "Account type updated!\n";
+            break;
+        }
+        case 5: {
+            cout << "Enter new balance: ";
+            cin >> user.balance;
+            cout << "Balance updated!\n";
+            break;
+        }
+        default:
+            cout << "Invalid field number!\n";
+    }
+
+    saveUserData(user);
+    this_thread::sleep_for(chrono::seconds(1));
+}
+
+void backupUserData() {
+    string backupDir = "backup_" + to_string(time(nullptr));
+    fs::create_directory(backupDir);
+    
+    for (const auto& entry : fs::directory_iterator(DATA_DIR)) {
+        fs::copy(entry.path(), backupDir + "/" + entry.path().filename().string());
+    }
+    
+    cout << "Backup created in directory: " << backupDir << "\n";
+    this_thread::sleep_for(chrono::seconds(1));
+}
+
+void restoreUserData() {
+    cout << "Available backups:\n";
+    vector<string> backups;
+    for (const auto& entry : fs::directory_iterator(".")) {
+        if (entry.path().filename().string().find("backup_") == 0) {
+            backups.push_back(entry.path().filename().string());
+            cout << backups.size() << ". " << entry.path().filename().string() << "\n";
+        }
+    }
+    
+    if (backups.empty()) {
+        cout << "No backups found!\n";
+        this_thread::sleep_for(chrono::seconds(1));
+        return;
+    }
+    
+    cout << "Select backup to restore (1-" << backups.size() << "): ";
+    int choice;
+    cin >> choice;
+    
+    if (choice < 1 || choice > backups.size()) {
+        cout << "Invalid choice!\n";
+        this_thread::sleep_for(chrono::seconds(1));
+        return;
+    }
+    
+    // Clear current data
+    for (const auto& entry : fs::directory_iterator(DATA_DIR)) {
+        fs::remove(entry.path());
+    }
+    
+    // Restore from backup
+    for (const auto& entry : fs::directory_iterator(backups[choice-1])) {
+        fs::copy(entry.path(), DATA_DIR + "/" + entry.path().filename().string());
+    }
+    
+    cout << "Data restored from " << backups[choice-1] << "!\n";
+    this_thread::sleep_for(chrono::seconds(1));
+}
